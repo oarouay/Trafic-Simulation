@@ -1,10 +1,11 @@
 import pygame
 from os.path import join
-
+import time
 
 class TrafficLight(pygame.sprite.Sprite):
     def __init__(self, x, y, direction, initial_state="red"):
         super().__init__()
+        self.last_change_time = time.time()
         self.x=x
         self.y=y
         self.direction = direction
