@@ -128,28 +128,26 @@ while running:
 
     # Update and check all cars
     for car in cars:
-        # Check for cars ahead BEFORE updating
-        car_ahead = False
+        # Check collision with ALL other cars
+        will_crash = False
         for other_car in cars:
-            if car != other_car and car.check_car_ahead(other_car):
-                car_ahead = True
+            if car != other_car and car.will_collide_soon(other_car):
+                will_crash = True
                 break
 
-        # Stop if there's a car ahead
-        if car_ahead:
+        if will_crash:
             car.stop()
         else:
-            # Check stop line
+            # Check traffic lights as usual
             current_stop_line = stop_lines[car.direction]
             current_traffic_light = traffic_lights[car.direction]
 
             if car.check_stop_line(current_stop_line):
                 if current_traffic_light.get_color() == "red":
                     car.stop()
-                elif current_traffic_light.get_color() == "green":
+                else:
                     car.resume()
             else:
-                # If not at stop line and no car ahead, resume
                 car.resume()
 
         car.update()

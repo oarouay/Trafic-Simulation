@@ -68,55 +68,20 @@ class Car(pygame.sprite.Sprite):
 
         return stop_line_rect.collidepoint(car_point)
 
-    def check_car_ahead(self, other_car, safe_distance=20):
-        """Check if there's another car ahead using front/back collision points"""
-        # Only check cars moving in the same direction
-        if self.direction != other_car.direction:
-            return False
 
-        # Check based on direction
+    def will_collide_soon(self, other_car, look_ahead_distance=20):
+        """Check if this car will collide with another car soon"""
+        # Create a "future position" rectangle based on direction
+        future_rect = self.rect.copy()
+
         if self.direction == "N":
-            # My front is midtop, other car's back is midbottom
-            my_front = self.rect.midtop
-            other_back = other_car.rect.midbottom
-
-            # Check if other car is ahead and in same lane
-            if (other_back[1] < my_front[1] and  # Other car is above me
-                    abs(other_back[0] - my_front[0]) < 30 and  # Same lane (x-axis)
-                    my_front[1] - other_back[1] < safe_distance):  # Within safe distance
-                return True
-
+            future_rect.y -= look_ahead_distance
         elif self.direction == "S":
-            # My front is midbottom, other car's back is midtop
-            my_front = self.rect.midbottom
-            other_back = other_car.rect.midtop
-
-            # Check if other car is ahead and in same lane
-            if (other_back[1] > my_front[1] and  # Other car is below me
-                    abs(other_back[0] - my_front[0]) < 30 and  # Same lane
-                    other_back[1] - my_front[1] < safe_distance):
-                return True
-
+            future_rect.y += look_ahead_distance
         elif self.direction == "E":
-            # My front is midright, other car's back is midleft
-            my_front = self.rect.midright
-            other_back = other_car.rect.midleft
-
-            # Check if other car is ahead and in same lane
-            if (other_back[0] > my_front[0] and  # Other car is to my right
-                    abs(other_back[1] - my_front[1]) < 30 and  # Same lane (y-axis)
-                    other_back[0] - my_front[0] < safe_distance):
-                return True
-
+            future_rect.x += look_ahead_distance
         elif self.direction == "W":
-            # My front is midleft, other car's back is midright
-            my_front = self.rect.midleft
-            other_back = other_car.rect.midright
+            future_rect.x -= look_ahead_distance
 
-            # Check if other car is ahead and in same lane
-            if (other_back[0] < my_front[0] and  # Other car is to my left
-                    abs(other_back[1] - my_front[1]) < 30 and  # Same lane
-                    my_front[0] - other_back[0] < safe_distance):
-                return True
-
-        return False
+        # Check if future position would collide with other car
+        return future_rect.colliderect(other_car.rect)
