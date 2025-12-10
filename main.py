@@ -7,6 +7,7 @@ import random
 import time
 
 pygame.init()
+pygame.mixer.init()
 
 # the intersection
 background = pygame.image.load(join('assets', 'intersection.png'))
@@ -66,7 +67,7 @@ controller = TrafficLightController.TrafficLightController(
 def spawn_random_car():
     """Spawn a car from a random direction with random speed"""
     direction = random.choice(['N', 'S', 'E', 'W'])
-    speed = random.uniform(0.5, 2.0)  # Random speed between 0.5 and 2.0
+    speed = random.uniform(1, 3.0)  # Random speed between 0.5 and 2.0
     return Car.Car(WINDOW_WIDTH, WINDOW_HEIGHT, speed, direction)
 
 
@@ -100,8 +101,10 @@ def is_car_off_screen(car):
         return True
     return False
 
+clock = pygame.time.Clock()
 
 while running:
+    clock.tick(60)
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
@@ -137,6 +140,7 @@ while running:
 
         if will_crash:
             car.stop()
+            car.horn(3)
         else:
             # Check traffic lights as usual
             current_stop_line = stop_lines[car.direction]

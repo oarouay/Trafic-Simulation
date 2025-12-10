@@ -2,6 +2,7 @@ from os.path import join
 import os
 import random
 import pygame
+import time
 
 class Car(pygame.sprite.Sprite):
     def __init__(self, x, y, speed, direction):
@@ -21,6 +22,18 @@ class Car(pygame.sprite.Sprite):
         self.direction = direction
         self.image = pygame.image.load(join(chosen_folder_path, chosen_image)).convert_alpha()
         self.image = pygame.transform.scale_by(self.image, 1)
+
+
+
+
+        self.last_honk_time = 0
+        sound_folder_path = join("assets", "sound", "horns")
+
+        horns_list = os.listdir(sound_folder_path)
+        chosen_horn = random.choice(horns_list)
+
+        self.horn_sound = pygame.mixer.Sound(join(sound_folder_path, chosen_horn))
+        self.horn_sound.set_volume(0.5)  # Adjust volume
 
         if direction == "S":
             self.image = pygame.transform.rotate(self.image, 180)
@@ -85,3 +98,14 @@ class Car(pygame.sprite.Sprite):
 
         # Check if future position would collide with other car
         return future_rect.colliderect(other_car.rect)
+
+    def horn(self, cooldown=2.0):
+        """Play horn sound with adjustable cooldown"""
+        current_time = time.time()
+
+        if self.horn_sound and current_time - self.last_honk_time >= cooldown:
+            self.horn_sound.set_volume(0.2)
+            self.horn_sound.play()
+            self.last_honk_time = current_time
+            return True
+        return False
