@@ -3,6 +3,8 @@ import os
 import random
 import pygame
 import time
+import math
+
 
 class Car(pygame.sprite.Sprite):
     def __init__(self, x, y, speed, direction):
@@ -12,19 +14,42 @@ class Car(pygame.sprite.Sprite):
         car_categories = os.listdir(car_folder_path)
 
         chosen_category = random.choice(car_categories)
-
         chosen_folder_path = join(car_folder_path, chosen_category)
         car_images = os.listdir(chosen_folder_path)
 
         chosen_image = random.choice(car_images)
-        self.original_speed=speed
+        self.original_speed = speed
         self.speed = speed
         self.direction = direction
         self.image = pygame.image.load(join(chosen_folder_path, chosen_image)).convert_alpha()
         self.image = pygame.transform.scale_by(self.image, 1)
 
+        self.is_police = "police" in chosen_image.lower()
+        self.is_ambulance = "ambulance" in chosen_image.lower()
+        self.is_emergency = self.is_police or self.is_ambulance
 
+        # Initialize siren variables for all cars (but only use for police)
+        self.siren_sound = None
+        self.siren_playing = False
 
+        if self.is_emergency:
+            print(f"{'Police' if self.is_police else 'Ambulance'} vehicle detected!")
+            # Initialize emergency light animation variables
+            self.light_time = 0
+            self.light_pulse = 0
+
+            # Load siren sound
+            try:
+                siren_path = join("assets", "sound", "siren", "police-siren.mp3")  # or .wav
+                self.siren_sound = pygame.mixer.Sound(siren_path)
+                self.siren_sound.set_volume(0.3)
+                # Automatically start playing the siren
+                self.siren_sound.play(loops=-1)
+                self.siren_playing = True
+                print("Siren playing!")
+            except Exception as e:
+                print(f"Siren sound not found: {e}")
+                self.siren_sound = None
 
         self.last_honk_time = 0
         sound_folder_path = join("assets", "sound", "horns")
@@ -37,20 +62,18 @@ class Car(pygame.sprite.Sprite):
 
         if direction == "S":
             self.image = pygame.transform.rotate(self.image, 180)
-            self.rect = self.image.get_frect(center=(x / 2-25, 0))
+            self.rect = self.image.get_frect(center=(x / 2 - 25, 0))
         if direction == "N":
             self.image = pygame.transform.rotate(self.image, 0)
-            self.rect = self.image.get_frect(center=(x/2+25, y))
+            self.rect = self.image.get_frect(center=(x / 2 + 25, y))
         elif direction == "E":
             self.image = pygame.transform.rotate(self.image, -90)
-            self.rect = self.image.get_frect(center=(0, y/2+25))
+            self.rect = self.image.get_frect(center=(0, y / 2 + 25))
         elif direction == "W":
             self.image = pygame.transform.rotate(self.image, 90)
-            self.rect = self.image.get_frect(center=(x, y/2-25))
-
+            self.rect = self.image.get_frect(center=(x, y / 2 - 25))
 
     def update(self):
-
         if self.direction == "N":
             self.rect.y -= self.speed
         elif self.direction == "S":
@@ -60,13 +83,76 @@ class Car(pygame.sprite.Sprite):
         elif self.direction == "W":
             self.rect.x -= self.speed
 
+        # Update police light animation
+        if self.is_emergency:
+            self.light_time += 1
+            self.light_pulse = abs(math.sin(self.light_time * 0.1)) * 0.5 + 0.5
+
     def stop(self):
         self.speed = 0
 
     def resume(self):
         self.speed = self.original_speed
+
+    def stop_siren(self):
+        """Stop playing the police siren"""
+        if self.is_emergency and self.siren_sound and self.siren_playing:
+            self.siren_sound.stop()
+            self.siren_playing = False
+
+    def draw_glowing_light(self, surface, color, center, radius, glow_intensity=1.0):
+        """Draw a glowing light effect with multiple layered circles"""
+        # Create a temporary surface with per-pixel alpha
+        glow_surface = pygame.Surface((radius * 4, radius * 4), pygame.SRCALPHA)
+
+        # Draw multiple circles with decreasing opacity for glow effect
+        for i in range(5, 0, -1):
+            current_radius = radius * i / 2
+            alpha = int((255 / (i + 1)) * glow_intensity)
+            glow_color = (*color, alpha)
+            pygame.draw.circle(glow_surface, glow_color,
+                               (radius * 2, radius * 2), int(current_radius))
+
+        # Blit the glow surface onto the main surface
+        surface.blit(glow_surface,
+                     (center[0] - radius * 2, center[1] - radius * 2))
+
     def draw(self, surface):
         surface.blit(self.image, self.rect)
+
+        # Draw emergency lights if this is a police car or ambulance
+        if self.is_emergency:
+            # Calculate light positions based on car direction
+            light_offset = 38
+
+            if self.direction == "N":
+                left_light = (self.rect.centerx - 8, self.rect.top + light_offset)
+                right_light = (self.rect.centerx + 8, self.rect.top + light_offset)
+            elif self.direction == "S":
+                left_light = (self.rect.centerx + 8, self.rect.bottom - light_offset)
+                right_light = (self.rect.centerx - 8, self.rect.bottom - light_offset)
+            elif self.direction == "E":
+                left_light = (self.rect.right - light_offset, self.rect.centery - 8)
+                right_light = (self.rect.right - light_offset, self.rect.centery + 8)
+            elif self.direction == "W":
+                left_light = (self.rect.left + light_offset, self.rect.centery + 8)
+                right_light = (self.rect.left + light_offset, self.rect.centery - 8)
+
+            # Determine light colors based on vehicle type
+            if self.is_ambulance:
+                # Ambulance: red and white lights
+                light_color_1 = (255, 0, 0)  # Red
+                light_color_2 = (255, 255, 255)  # White
+            else:
+                # Police: red and blue lights
+                light_color_1 = (0, 100, 255)  # Blue
+                light_color_2 = (255, 0, 0)  # Red
+
+            # Alternate between lights
+            if int(self.light_time / 15) % 2 == 0:
+                self.draw_glowing_light(surface, light_color_1, left_light, 8, self.light_pulse)
+            else:
+                self.draw_glowing_light(surface, light_color_2, right_light, 8, self.light_pulse)
 
     def check_stop_line(self, stop_line_rect):
         """Check if the front of the car intersects with a stop line"""
@@ -80,7 +166,6 @@ class Car(pygame.sprite.Sprite):
             car_point = self.rect.midleft
 
         return stop_line_rect.collidepoint(car_point)
-
 
     def will_collide_soon(self, other_car, look_ahead_distance=20):
         """Check if this car will collide with another car soon"""

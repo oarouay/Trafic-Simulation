@@ -28,7 +28,7 @@ class TrafficLight(pygame.sprite.Sprite):
             # Update current image after rotation
             self.image = self.images[self.current_color]
             # Set position
-            self.rect = self.image.get_frect(center=(self.x / 2 - 65, self.y / 2 - 127))
+            self.rect = self.image.get_frect(center=(self.x / 2 - 90, self.y / 2 - 127))
 
 
 
@@ -36,7 +36,7 @@ class TrafficLight(pygame.sprite.Sprite):
             # Update current image after rotation
             self.image = self.images[self.current_color]
             # Set position
-            self.rect = self.image.get_frect(center=(self.x / 2 + 65, self.y / 2 + 127))
+            self.rect = self.image.get_frect(center=(self.x / 2 + 90, self.y / 2 + 127))
 
 
 
@@ -47,7 +47,7 @@ class TrafficLight(pygame.sprite.Sprite):
             # Update current image after rotation
             self.image = self.images[self.current_color]
             # Set position
-            self.rect = self.image.get_frect(center=(self.x / 2 -120, self.y / 2 +65))
+            self.rect = self.image.get_frect(center=(self.x / 2 -120, self.y / 2 + 94))
 
 
 
@@ -57,7 +57,7 @@ class TrafficLight(pygame.sprite.Sprite):
             # Update current image after rotation
             self.image = self.images[self.current_color]
             # Set position
-            self.rect = self.image.get_frect(center=(self.x / 2 + 120, self.y / 2 - 70))
+            self.rect = self.image.get_frect(center=(self.x / 2 + 120, self.y / 2 - 94))
     def draw(self, screen):
         screen.blit(self.image, self.rect)
 
