@@ -26,22 +26,16 @@ BG = pygame.transform.scale(BG, (SCREEN_WIDTH, SCREEN_HEIGHT))
 def get_font(size):
     """Load and return a font of specified size"""
     return pygame.font.Font(join('assets', 'fonts', 'font.ttf'), size)
-
-
 def spawn_random_car(window_width, window_height):
     """Spawn a car from a random direction with random speed"""
     direction = random.choice(['N', 'S', 'E', 'W'])
     speed = random.uniform(1, 3.0)
     return Car.Car(window_width, window_height, speed, direction)
-
-
 def spawn_test_pedestrian(window_width, window_height):
     """Spawn a test pedestrian"""
     direction = random.choice(['N', 'S', 'E', 'W'])
     speed = random.uniform(0.5, 1.5)
     return Pedestrian.Pedestrian(window_width, window_height, speed, direction)
-
-
 def is_spawn_position_clear(new_car, existing_cars, min_distance=100):
     """Check if spawn position has enough space"""
     for car in existing_cars:
@@ -57,14 +51,10 @@ def is_spawn_position_clear(new_car, existing_cars, min_distance=100):
             return False
 
     return True
-
-
 def is_entity_off_screen(entity, window_width, window_height):
     """Check if an entity (car or pedestrian) has left the screen"""
     return (entity.rect.right < 0 or entity.rect.left > window_width or
             entity.rect.bottom < 0 or entity.rect.top > window_height)
-
-
 def initialize_simulation(window_width, window_height):
     """Initialize all simulation components"""
     # Traffic lights
@@ -119,8 +109,6 @@ def initialize_simulation(window_width, window_height):
         'traffic_light_east': traffic_light_east,
         'traffic_light_west': traffic_light_west
     }
-
-
 def run_simulation():
     """Run the traffic simulation"""
     # Load background
@@ -296,8 +284,6 @@ def run_simulation():
     # Reset display back to menu size
     SCREEN = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Traffic Simulation")
-
-
 def show_menu():
     """Display the main menu"""
     clock = pygame.time.Clock()
