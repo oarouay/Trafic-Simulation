@@ -22,6 +22,8 @@ pygame.display.set_caption("Traffic Simulation")
 BG = pygame.image.load(join('assets', 'background.png'))
 BG = pygame.transform.scale(BG, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
+LAST_STATS = None
+
 
 def get_font(size):
     """Load and return a font of specified size"""
@@ -135,6 +137,15 @@ def run_simulation():
     running = True
     clock = pygame.time.Clock()
 
+    global LAST_STATS
+    sim_start_time = time.time()
+
+    cars_crossed = 0
+    peds_crossed = 0
+
+    # per-car wait tracking without editing Car.py
+    car_wait = {}  # key: id(car) -> {'wait_total':0, 'stopped':False, 'stop_started':0}
+
     # Spawn initial test pedestrian
     test_pedestrian = spawn_test_pedestrian(window_width, window_height)
     pedestrians.append(test_pedestrian)
@@ -168,6 +179,7 @@ def run_simulation():
 
             if is_spawn_position_clear(new_car, cars):
                 cars.append(new_car)
+                car_wait[id(new_car)] = {"wait_total": 0.0, "stopped": False, "stop_started": 0.0}
                 print(f"Spawned car! Total cars: {len(cars)}")
             else:
                 print("Spawn blocked - car already at spawn position")
@@ -208,6 +220,11 @@ def run_simulation():
             if will_crash_car or will_crash_pedestrian:
                 car.stop()
                 car.horn(3)
+                st = car_wait.get(id(car))
+                if st and not st["stopped"]:
+                    st["stopped"] = True
+                    st["stop_started"] = time.time()
+
             else:
                 current_stop_line = sim_data['stop_lines'][car.direction]
                 current_traffic_light = sim_data['traffic_lights'][car.direction]
@@ -216,10 +233,23 @@ def run_simulation():
                     if current_traffic_light.get_color() == "red":
                         if not car.is_emergency:
                             car.stop()
+                            st = car_wait.get(id(car))
+                            if st and not st["stopped"]:
+                                st["stopped"] = True
+                                st["stop_started"] = time.time()
+
                     else:
                         car.resume()
+                        st = car_wait.get(id(car))
+                        if st and st["stopped"]:
+                            st["wait_total"] += time.time() - st["stop_started"]
+                            st["stopped"] = False
                 else:
                     car.resume()
+                    st = car_wait.get(id(car))
+                    if st and st["stopped"]:
+                        st["wait_total"] += time.time() - st["stop_started"]
+                        st["stopped"] = False
 
             car.update()
         # Update and check all pedestrians
@@ -245,11 +275,20 @@ def run_simulation():
         # Remove cars that have left the screen
         cars_to_remove = [car for car in cars if is_entity_off_screen(car, window_width, window_height)]
         for car in cars_to_remove:
+            cars_crossed += 1
+
+            st = car_wait.get(id(car))
+            if st and st["stopped"]:
+                st["wait_total"] += time.time() - st["stop_started"]
+                st["stopped"] = False
+
             if car.is_emergency:
                 car.stop_siren()
         cars = [car for car in cars if not is_entity_off_screen(car, window_width, window_height)]
 
         # Remove pedestrians that have left the screen
+        peds_to_remove = [ped for ped in pedestrians if is_entity_off_screen(ped, window_width, window_height)]
+        peds_crossed += len(peds_to_remove)
         pedestrians = [ped for ped in pedestrians if not is_entity_off_screen(ped, window_width, window_height)]
 
         # Draw the game
@@ -275,15 +314,84 @@ def run_simulation():
 
         # Draw finish button
         finish_button = Button(image=finish_img, pos=(window_width - 70, 30),
-                               text_input="FINISH", font=get_font(30), base_color="#d7fcd4", hovering_color="White")
+                               text_input="FINISH", font=get_font(20), base_color="#d7fcd4", hovering_color="White")
         finish_button.changeColor(MOUSE_POS)
         finish_button.update(sim_display)
 
         pygame.display.update()
 
+    for car in cars:
+        if getattr(car, "is_emergency", False):
+            car.stop_siren()
+
+    pygame.mixer.stop()  # stops any remaining sounds (sirens/horns)
+
+
+    sim_time = time.time() - sim_start_time
+
+    waits = [st["wait_total"] for st in car_wait.values()]
+    avg_car_wait = sum(waits) / len(waits) if waits else 0.0
+
+    LAST_STATS = {
+        "sim_time": sim_time,
+        "cars_crossed": cars_crossed,
+        "peds_crossed": peds_crossed,
+        "avg_car_wait": avg_car_wait
+    }
+
     # Reset display back to menu size
     SCREEN = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Traffic Simulation")
+def show_stats():
+    global LAST_STATS
+    if not LAST_STATS:
+        return
+
+    clock = pygame.time.Clock()
+    running = True
+
+    while running:
+        SCREEN.blit(BG, (0, 0))
+        MOUSE_POS = pygame.mouse.get_pos()
+
+        title_font = get_font(50)
+        text_font = get_font(20)
+
+        title = title_font.render("STATS", True, "White")
+        SCREEN.blit(title, title.get_rect(center=(SCREEN_WIDTH / 2, 80)))
+
+        s = LAST_STATS
+        lines = [
+            f"Simulation time: {s['sim_time']:.1f} s",
+            f"Cars crossed: {s['cars_crossed']}",
+            f"Pedestrians crossed: {s['peds_crossed']}",
+            f"Average car wait: {s['avg_car_wait']:.2f} s",
+        ]
+
+        y = 160
+        for line in lines:
+            txt = text_font.render(line, True, "White")
+            SCREEN.blit(txt, (70, y))
+            y += 45
+
+        back_button = Button(image=None, pos=(SCREEN_WIDTH / 2, 520),
+                             text_input="BACK", font=get_font(50),
+                             base_color="#d7fcd4", hovering_color="White")
+        back_button.changeColor(MOUSE_POS)
+        back_button.update(SCREEN)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                running = False
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if back_button.checkForInput(MOUSE_POS):
+                    running = False
+
+        pygame.display.update()
+        clock.tick(60)
+
 def show_menu():
     """Display the main menu"""
     clock = pygame.time.Clock()
@@ -298,6 +406,12 @@ def show_menu():
         start_button = Button(image=None, pos=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 50),
                               text_input="START", font=get_font(75), base_color="#d7fcd4",
                               hovering_color="White")
+
+        stats_button = Button(image=None, pos=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 150),
+                              text_input="STATS", font=get_font(75),
+                              base_color="#d7fcd4" if LAST_STATS else "#555555",
+                              hovering_color="White")
+
         quit_button = Button(image=None, pos=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50),
                              text_input="QUIT", font=get_font(75), base_color="#d7fcd4",
                              hovering_color="White")
@@ -305,6 +419,8 @@ def show_menu():
         # Draw buttons
         start_button.changeColor(MOUSE_POS)
         start_button.update(SCREEN)
+        stats_button.changeColor(MOUSE_POS)
+        stats_button.update(SCREEN)
         quit_button.changeColor(MOUSE_POS)
         quit_button.update(SCREEN)
 
@@ -313,6 +429,8 @@ def show_menu():
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.MOUSEBUTTONDOWN:
+                if LAST_STATS and stats_button.checkForInput(MOUSE_POS):
+                    show_stats()
                 if start_button.checkForInput(MOUSE_POS):
                     run_simulation()
                 if quit_button.checkForInput(MOUSE_POS):
