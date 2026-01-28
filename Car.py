@@ -20,6 +20,7 @@ class Car(pygame.sprite.Sprite):
         chosen_image = random.choice(car_images)
         self.original_speed = speed
         self.speed = speed
+        self.base_speed = speed
         self.direction = direction
         self.image = pygame.image.load(join(chosen_folder_path, chosen_image)).convert_alpha()
         self.image = pygame.transform.scale_by(self.image, 1)
@@ -73,6 +74,16 @@ class Car(pygame.sprite.Sprite):
             self.image = pygame.transform.rotate(self.image, 90)
             self.rect = self.image.get_frect(center=(x, y / 2 - 25))
 
+    def apply_environment(self, env):
+        # emergency vehicles: reduce less
+        emergency_bonus = 0.15 if self.is_emergency else 0.0
+        factor = min(1.0, env.speed_factor + emergency_bonus)
+
+        # only change "normal driving" speed, keep stop() working
+        self.original_speed = self.base_speed * factor
+        if self.speed > 0:  # if moving, update current speed too
+            self.speed = self.original_speed
+
     def update(self):
         if self.direction == "N":
             self.rect.y -= self.speed
@@ -117,9 +128,13 @@ class Car(pygame.sprite.Sprite):
         surface.blit(glow_surface,
                      (center[0] - radius * 2, center[1] - radius * 2))
 
-    def draw(self, surface):
+    def draw(self, surface, env=None):
         surface.blit(self.image, self.rect)
 
+        if env is not None:
+            self.draw_headlights(surface, env)
+
+        surface.blit(self.image, self.rect)
         # Draw emergency lights if this is a police car or ambulance
         if self.is_emergency:
             # Calculate light positions based on car direction
@@ -183,6 +198,94 @@ class Car(pygame.sprite.Sprite):
 
         # Check if future position would collide with other car
         return future_rect.colliderect(other_car.rect)
+
+    def draw_headlights(self, surface, env):
+        """
+        Soft, transparent headlights.
+        Turn on when raining/foggy or at dusk/night.
+        """
+        if env is None:
+            return
+
+        # --- When to turn on headlights ---
+        rain = getattr(env, "rain", 0.0)
+        fog = getattr(env, "fog", 0.0)
+        time_of_day = getattr(env, "time_of_day", "day")
+        visibility = getattr(env, "visibility", 1.0)
+
+        headlights_on = (rain >= 0.15) or (fog >= 0.15) or (time_of_day in ("dusk", "night"))
+        if not headlights_on:
+            return
+
+        # --- Shape parameters ---
+        base_len = 120
+        length = int(base_len * (0.55 + 0.75 * max(0.2, visibility)))  # shorter when foggy
+        width = 80
+
+        # --- Intensity (alpha) ---
+        strength = 0.35 + 0.55 * min(1.0, rain + fog)
+        if time_of_day == "night":
+            strength += 0.25
+        alpha = int(140 * min(1.0, strength))
+        alpha = int(alpha * (0.6 + 0.4 * max(0.2, visibility)))  # dim a bit in heavy fog
+
+        # Transparent overlay for soft blending
+        overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 0))
+
+        cx, cy = self.rect.centerx, self.rect.centery
+
+        # --- Compute cone points based on direction ---
+        if self.direction == "N":
+            start = (cx, self.rect.top)
+            p1 = (cx - width // 2, self.rect.top - length)
+            p2 = (cx + width // 2, self.rect.top - length)
+        elif self.direction == "S":
+            start = (cx, self.rect.bottom)
+            p1 = (cx - width // 2, self.rect.bottom + length)
+            p2 = (cx + width // 2, self.rect.bottom + length)
+        elif self.direction == "E":
+            start = (self.rect.right, cy)
+            p1 = (self.rect.right + length, cy - width // 2)
+            p2 = (self.rect.right + length, cy + width // 2)
+        else:  # "W"
+            start = (self.rect.left, cy)
+            p1 = (self.rect.left - length, cy - width // 2)
+            p2 = (self.rect.left - length, cy + width // 2)
+
+        # --- Draw a soft main cone (transparent) ---
+        pygame.draw.polygon(overlay, (255, 245, 210, alpha), [start, p1, p2])
+
+        # --- Inner brighter cone ---
+        inner_w = int(width * 0.55)
+        inner_len = int(length * 0.65)
+        inner_alpha = int(alpha * 0.7)
+
+        if self.direction == "N":
+            ip1 = (cx - inner_w // 2, self.rect.top - inner_len)
+            ip2 = (cx + inner_w // 2, self.rect.top - inner_len)
+            istart = (cx, self.rect.top)
+        elif self.direction == "S":
+            ip1 = (cx - inner_w // 2, self.rect.bottom + inner_len)
+            ip2 = (cx + inner_w // 2, self.rect.bottom + inner_len)
+            istart = (cx, self.rect.bottom)
+        elif self.direction == "E":
+            ip1 = (self.rect.right + inner_len, cy - inner_w // 2)
+            ip2 = (self.rect.right + inner_len, cy + inner_w // 2)
+            istart = (self.rect.right, cy)
+        else:
+            ip1 = (self.rect.left - inner_len, cy - inner_w // 2)
+            ip2 = (self.rect.left - inner_len, cy + inner_w // 2)
+            istart = (self.rect.left, cy)
+
+        pygame.draw.polygon(overlay, (255, 255, 235, inner_alpha), [istart, ip1, ip2])
+
+        # --- Glow around the headlight source (softens the "triangle" look) ---
+        pygame.draw.circle(overlay, (255, 255, 220, int(alpha * 0.7)), start, 10)
+        pygame.draw.circle(overlay, (255, 255, 220, int(alpha * 0.35)), start, 18)
+
+        # IMPORTANT: normal alpha blit (NO BLEND_RGBA_ADD)
+        surface.blit(overlay, (0, 0))
 
     def horn(self, cooldown=2.0):
         """Play horn sound with adjustable cooldown"""

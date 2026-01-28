@@ -8,6 +8,8 @@ import TrafficLightController
 import random
 import time
 from Button import Button
+from WeatherSystem import WeatherSystem
+from Environment import WeatherRenderer
 
 pygame.init()
 pygame.mixer.init()
@@ -23,20 +25,47 @@ BG = pygame.image.load(join('assets', 'background.png'))
 BG = pygame.transform.scale(BG, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
 LAST_STATS = None
+USER_SETTINGS = {
+    "traffic": "Normal",         # Low / Normal / High / Rush Hour
+    "driving": "Normal",         # Cautious / Normal / Aggressive
+    "pedestrians": "Normal",     # Rare / Normal / Busy
+    "weather": "Changing",       # Stable / Changing / Chaotic
+}
+CONFIG = {
+    # Car spawn
+    "car_spawn_min": 1.0,
+    "car_spawn_max": 3.0,
+
+    # Ped spawn
+    "ped_spawn_min": 3.0,
+    "ped_spawn_max": 6.0,
+
+    # Car speed
+    "car_speed_min": 1.0,
+    "car_speed_max": 3.0,
+
+    # Ped speed
+    "ped_speed_min": 0.5,
+    "ped_speed_max": 1.5,
+
+    # Spawn spacing
+    "spawn_min_distance": 100,
+
+    # Weather
+    "weather_change_interval": 25,   # seconds
+}
 
 
 def get_font(size):
     """Load and return a font of specified size"""
     return pygame.font.Font(join('assets', 'fonts', 'font.ttf'), size)
 def spawn_random_car(window_width, window_height):
-    """Spawn a car from a random direction with random speed"""
     direction = random.choice(['N', 'S', 'E', 'W'])
-    speed = random.uniform(1, 3.0)
+    speed = random.uniform(CONFIG["car_speed_min"], CONFIG["car_speed_max"])
     return Car.Car(window_width, window_height, speed, direction)
 def spawn_test_pedestrian(window_width, window_height):
-    """Spawn a test pedestrian"""
     direction = random.choice(['N', 'S', 'E', 'W'])
-    speed = random.uniform(0.5, 1.5)
+    speed = random.uniform(CONFIG["ped_speed_min"], CONFIG["ped_speed_max"])
     return Pedestrian.Pedestrian(window_width, window_height, speed, direction)
 def is_spawn_position_clear(new_car, existing_cars, min_distance=100):
     """Check if spawn position has enough space"""
@@ -53,6 +82,49 @@ def is_spawn_position_clear(new_car, existing_cars, min_distance=100):
             return False
 
     return True
+def apply_user_settings():
+    t = USER_SETTINGS["traffic"]
+    d = USER_SETTINGS["driving"]
+    p = USER_SETTINGS["pedestrians"]
+    w = USER_SETTINGS["weather"]
+
+    # --- Traffic density ---
+    if t == "Low":
+        CONFIG["car_spawn_min"], CONFIG["car_spawn_max"] = 2.5, 4.5
+        CONFIG["spawn_min_distance"] = 140
+    elif t == "Normal":
+        CONFIG["car_spawn_min"], CONFIG["car_spawn_max"] = 1.0, 3.0
+        CONFIG["spawn_min_distance"] = 100
+    elif t == "High":
+        CONFIG["car_spawn_min"], CONFIG["car_spawn_max"] = 0.6, 1.5
+        CONFIG["spawn_min_distance"] = 85
+    else:  # Rush Hour
+        CONFIG["car_spawn_min"], CONFIG["car_spawn_max"] = 0.35, 0.9
+        CONFIG["spawn_min_distance"] = 75
+
+    # --- Driving style ---
+    if d == "Cautious":
+        CONFIG["car_speed_min"], CONFIG["car_speed_max"] = 0.8, 2.0
+    elif d == "Normal":
+        CONFIG["car_speed_min"], CONFIG["car_speed_max"] = 1.0, 3.0
+    else:  # Aggressive
+        CONFIG["car_speed_min"], CONFIG["car_speed_max"] = 1.8, 4.0
+
+    # --- Pedestrian activity ---
+    if p == "Rare":
+        CONFIG["ped_spawn_min"], CONFIG["ped_spawn_max"] = 7.0, 12.0
+    elif p == "Normal":
+        CONFIG["ped_spawn_min"], CONFIG["ped_spawn_max"] = 3.0, 6.0
+    else:  # Busy
+        CONFIG["ped_spawn_min"], CONFIG["ped_spawn_max"] = 1.5, 3.5
+
+    # --- Weather variability ---
+    if w == "Stable":
+        CONFIG["weather_change_interval"] = 60
+    elif w == "Changing":
+        CONFIG["weather_change_interval"] = 25
+    else:  # Chaotic
+        CONFIG["weather_change_interval"] = 10
 def is_entity_off_screen(entity, window_width, window_height):
     """Check if an entity (car or pedestrian) has left the screen"""
     return (entity.rect.right < 0 or entity.rect.left > window_width or
@@ -116,9 +188,12 @@ def run_simulation():
     # Load background
     background = pygame.image.load(join('assets', 'intersection.png'))
     window_width, window_height = background.get_width(), background.get_height()
-
+    global CONFIG
     # Create a new display for simulation
     sim_display = pygame.display.set_mode((window_width, window_height))
+    weather_system = WeatherSystem(change_interval=CONFIG["weather_change_interval"])
+    weather_fx = WeatherRenderer(window_width, window_height)
+
     pygame.display.set_caption("Traffic Simulation - Press ESC to return to menu")
 
     # Initialize simulation components
@@ -131,9 +206,9 @@ def run_simulation():
     cars = []
     pedestrians = []
     last_spawn_time = time.time()
-    spawn_interval = random.uniform(1, 3)
+    spawn_interval = random.uniform(CONFIG["car_spawn_min"], CONFIG["car_spawn_max"])
     last_pedestrian_spawn_time = time.time()
-    pedestrian_spawn_interval = random.uniform(3, 6)
+    pedestrian_spawn_interval = random.uniform(CONFIG["ped_spawn_min"], CONFIG["ped_spawn_max"])
     running = True
     clock = pygame.time.Clock()
 
@@ -153,7 +228,7 @@ def run_simulation():
 
     # Main simulation loop
     while running:
-        clock.tick(60)
+        dt = clock.tick(60) / 1000.0
 
         MOUSE_POS = pygame.mouse.get_pos()
 
@@ -171,13 +246,14 @@ def run_simulation():
                                        hovering_color="White")
                 if finish_button.checkForInput(MOUSE_POS):
                     running = False
+        env = weather_system.update(dt)
 
         # Spawn new cars randomly
         current_time = time.time()
         if current_time - last_spawn_time >= spawn_interval:
             new_car = spawn_random_car(window_width, window_height)
 
-            if is_spawn_position_clear(new_car, cars):
+            if is_spawn_position_clear(new_car, cars, min_distance=CONFIG["spawn_min_distance"]):
                 cars.append(new_car)
                 car_wait[id(new_car)] = {"wait_total": 0.0, "stopped": False, "stop_started": 0.0}
                 print(f"Spawned car! Total cars: {len(cars)}")
@@ -185,7 +261,7 @@ def run_simulation():
                 print("Spawn blocked - car already at spawn position")
 
             last_spawn_time = current_time
-            spawn_interval = random.uniform(1, 3)
+            spawn_interval = random.uniform(CONFIG["car_spawn_min"], CONFIG["car_spawn_max"])
 
         # Spawn new pedestrians randomly
         if current_time - last_pedestrian_spawn_time >= pedestrian_spawn_interval:
@@ -194,7 +270,8 @@ def run_simulation():
             print(f"Spawned pedestrian! Total pedestrians: {len(pedestrians)}")
 
             last_pedestrian_spawn_time = current_time
-            pedestrian_spawn_interval = random.uniform(3, 6)
+            pedestrian_spawn_interval = random.uniform(CONFIG["ped_spawn_min"], CONFIG["ped_spawn_max"])
+
 
         # Update controller
         sim_data['controller'].update()
@@ -204,16 +281,18 @@ def run_simulation():
         for car in cars:
             will_crash_car = False
             will_crash_pedestrian = False
-
+            car.apply_environment(env)
             # Check collision with other cars
             for other_car in cars:
-                if car != other_car and car.will_collide_soon(other_car):
+                look = int(20 * env.caution)
+                if car != other_car and car.will_collide_soon(other_car, look_ahead_distance=look):
                     will_crash_car = True
                     break
 
             # Check collision with pedestrians
             for pedestrian in pedestrians:
-                if car.will_collide_soon(pedestrian):
+                look_ped = int(20 * env.caution)
+                if car.will_collide_soon(pedestrian, look_ahead_distance=look_ped):
                     will_crash_pedestrian = True
                     break
 
@@ -229,7 +308,9 @@ def run_simulation():
                 current_stop_line = sim_data['stop_lines'][car.direction]
                 current_traffic_light = sim_data['traffic_lights'][car.direction]
 
-                if car.check_stop_line(current_stop_line):
+                extra = int(12 * env.caution)
+                stop_rect = current_stop_line.inflate(extra, extra)
+                if car.check_stop_line(stop_rect):
                     if current_traffic_light.get_color() == "red":
                         if not car.is_emergency:
                             car.stop()
@@ -301,7 +382,7 @@ def run_simulation():
 
         # Draw all cars
         for car in cars:
-            car.draw(sim_display)
+            car.draw(sim_display,env)
 
         # Draw all pedestrians
         for pedestrian in pedestrians:
@@ -317,7 +398,7 @@ def run_simulation():
                                text_input="FINISH", font=get_font(20), base_color="#d7fcd4", hovering_color="White")
         finish_button.changeColor(MOUSE_POS)
         finish_button.update(sim_display)
-
+        weather_fx.draw(sim_display, env)
         pygame.display.update()
 
     for car in cars:
@@ -342,8 +423,98 @@ def run_simulation():
     # Reset display back to menu size
     SCREEN = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Traffic Simulation")
+def cycle_option(current, options, direction):
+    i = options.index(current)
+    i = (i + direction) % len(options)
+    return options[i]
+
+def show_settings():
+    clock = pygame.time.Clock()
+    running = True
+
+    traffic_opts = ["Low", "Normal", "High", "Rush Hour"]
+    driving_opts = ["Cautious", "Normal", "Aggressive"]
+    ped_opts = ["Rare", "Normal", "Busy"]
+    weather_opts = ["Stable", "Changing", "Chaotic"]
+
+    while running:
+        SCREEN.blit(BG, (0, 0))
+        MOUSE_POS = pygame.mouse.get_pos()
+
+        SCREEN.blit(get_font(50).render("SETTINGS", True, "White"),
+                    (SCREEN_WIDTH/2-190, 60))
+
+        font_label = get_font(15)
+        font_val = get_font(15)
+
+        def draw_row(y, label, value):
+            SCREEN.blit(font_label.render(label, True, "White"), (20, y))
+            SCREEN.blit(font_val.render(value, True, "#d7fcd4"), (330, y))
+
+        y0 = 160
+        draw_row(y0,     "Traffic density", USER_SETTINGS["traffic"])
+        draw_row(y0+60,  "Driving style",   USER_SETTINGS["driving"])
+        draw_row(y0+120, "Pedestrians",     USER_SETTINGS["pedestrians"])
+        draw_row(y0+180, "Weather",         USER_SETTINGS["weather"])
+
+        # arrows for each row
+        left1  = Button(None, (280, y0+10),  "<", get_font(30), "#d7fcd4", "White")
+        right1 = Button(None, (520, y0+10),  ">", get_font(30), "#d7fcd4", "White")
+
+        left2  = Button(None, (280, y0+70),  "<", get_font(30), "#d7fcd4", "White")
+        right2 = Button(None, (520, y0+70),  ">", get_font(30), "#d7fcd4", "White")
+
+        left3  = Button(None, (280, y0+130), "<", get_font(30), "#d7fcd4", "White")
+        right3 = Button(None, (520, y0+130), ">", get_font(30), "#d7fcd4", "White")
+
+        left4  = Button(None, (280, y0+190), "<", get_font(30), "#d7fcd4", "White")
+        right4 = Button(None, (520, y0+190), ">", get_font(30), "#d7fcd4", "White")
+
+        back_button = Button(None, (SCREEN_WIDTH/2, 540), "BACK", get_font(55), "#d7fcd4", "White")
+
+        buttons = [left1,right1,left2,right2,left3,right3,left4,right4,back_button]
+        for b in buttons:
+            b.changeColor(MOUSE_POS)
+            b.update(SCREEN)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                running = False
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if left1.checkForInput(MOUSE_POS):
+                    USER_SETTINGS["traffic"] = cycle_option(USER_SETTINGS["traffic"], traffic_opts, -1)
+                if right1.checkForInput(MOUSE_POS):
+                    USER_SETTINGS["traffic"] = cycle_option(USER_SETTINGS["traffic"], traffic_opts, +1)
+
+                if left2.checkForInput(MOUSE_POS):
+                    USER_SETTINGS["driving"] = cycle_option(USER_SETTINGS["driving"], driving_opts, -1)
+                if right2.checkForInput(MOUSE_POS):
+                    USER_SETTINGS["driving"] = cycle_option(USER_SETTINGS["driving"], driving_opts, +1)
+
+                if left3.checkForInput(MOUSE_POS):
+                    USER_SETTINGS["pedestrians"] = cycle_option(USER_SETTINGS["pedestrians"], ped_opts, -1)
+                if right3.checkForInput(MOUSE_POS):
+                    USER_SETTINGS["pedestrians"] = cycle_option(USER_SETTINGS["pedestrians"], ped_opts, +1)
+
+                if left4.checkForInput(MOUSE_POS):
+                    USER_SETTINGS["weather"] = cycle_option(USER_SETTINGS["weather"], weather_opts, -1)
+                if right4.checkForInput(MOUSE_POS):
+                    USER_SETTINGS["weather"] = cycle_option(USER_SETTINGS["weather"], weather_opts, +1)
+
+                # IMPORTANT: apply mapping whenever user changes something
+                apply_user_settings()
+
+                if back_button.checkForInput(MOUSE_POS):
+                    running = False
+
+        pygame.display.update()
+        clock.tick(60)
+
 def show_stats():
     global LAST_STATS
+    global CONFIG
     if not LAST_STATS:
         return
 
@@ -391,7 +562,6 @@ def show_stats():
 
         pygame.display.update()
         clock.tick(60)
-
 def show_menu():
     """Display the main menu"""
     clock = pygame.time.Clock()
@@ -403,16 +573,19 @@ def show_menu():
         SCREEN.blit(BG, (0, 0))
 
         # Create buttons
-        start_button = Button(image=None, pos=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 50),
+        start_button = Button(image=None, pos=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 160),
                               text_input="START", font=get_font(75), base_color="#d7fcd4",
                               hovering_color="White")
 
-        stats_button = Button(image=None, pos=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 150),
+        stats_button = Button(image=None, pos=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2),
                               text_input="STATS", font=get_font(75),
                               base_color="#d7fcd4" if LAST_STATS else "#555555",
                               hovering_color="White")
+        settings_button = Button(image=None, pos=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 80),
+                                 text_input="SETTINGS", font=get_font(60),
+                                 base_color="#d7fcd4", hovering_color="White")
 
-        quit_button = Button(image=None, pos=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50),
+        quit_button = Button(image=None, pos=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 90),
                              text_input="QUIT", font=get_font(75), base_color="#d7fcd4",
                              hovering_color="White")
 
@@ -421,6 +594,8 @@ def show_menu():
         start_button.update(SCREEN)
         stats_button.changeColor(MOUSE_POS)
         stats_button.update(SCREEN)
+        settings_button.changeColor(MOUSE_POS)
+        settings_button.update(SCREEN)
         quit_button.changeColor(MOUSE_POS)
         quit_button.update(SCREEN)
 
@@ -433,6 +608,8 @@ def show_menu():
                     show_stats()
                 if start_button.checkForInput(MOUSE_POS):
                     run_simulation()
+                if settings_button.checkForInput(MOUSE_POS):
+                    show_settings()
                 if quit_button.checkForInput(MOUSE_POS):
                     pygame.quit()
                     sys.exit()
@@ -442,4 +619,5 @@ def show_menu():
 
 
 if __name__ == "__main__":
+    apply_user_settings()
     show_menu()
